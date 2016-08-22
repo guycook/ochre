@@ -1,0 +1,11 @@
+ochre! {
+    Window<CounterData> {
+        width: 640,
+        height: 480,
+
+        Button {
+            label: "Increment",
+            on_click: || { data.count += 1 },
+        }
+    }
+}

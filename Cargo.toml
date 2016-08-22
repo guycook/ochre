@@ -5,3 +5,6 @@ license = "MIT/Apache-2.0"
 authors = ["guycook"]
 
 [dependencies]
+piston_window = "*"
+gfx_device_gl = "*"
+conrod = "*"
