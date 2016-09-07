@@ -3,6 +3,8 @@ extern crate gfx_device_gl;
 #[macro_use]
 extern crate conrod;
 
+use std::collections::HashMap;
+
 use conrod::{widget, Labelable, Positionable, Sizeable, Widget};
 use piston_window::{EventLoop, PistonWindow, UpdateEvent, WindowSettings};
 
@@ -13,21 +15,70 @@ pub trait New {
     fn new() -> Self;
 }
 
-pub enum Component {
-    Button,
+pub struct Context {
+    rules: HashMap<&'static str, Box<Fn() -> ()>>,
+    children: Vec<Box<Component>>,
+}
+
+impl Context {
+    pub fn new() -> Context {
+        Context {
+            rules: HashMap::new(),
+            children: Vec::new(),
+        }
+    }
+}
+
+pub trait Component {
+    fn context(&mut self) -> &mut Context;
+
+    fn add_rule(&mut self, key: &'static str, value: Box<Fn() -> ()>) {
+        self.context().rules.insert(key, value);
+    }
+
+    fn add_child(&mut self, child: Box<Component>) {
+        self.context().children.push(child);
+    }
+}
+
+pub struct Button {
+    context: Context,
+}
+
+impl Button {
+    pub fn new() -> Button {
+        Button {
+            context: Context::new(),
+        }
+    }
+}
+
+impl Component for Button {
+    fn context(&mut self) -> &mut Context {
+        &mut self.context
+    }
+}
+
+impl Component for Window {
+    fn context(&mut self) -> &mut Context {
+        &mut self.context
+    }
 }
 
 #[macro_export]
 macro_rules! ochre {
     // For now, the top level declaration must be a Window, optionally with a backing data struct
     // TODO: ^^ Will this always be the case?
-    (Window { $($body:tt)* }) => ({
-        println!("{}", concat!($(stringify!($body)," - "),*));
-        ochre_component!($($body)*);
-    });
+    // (Window { $($body:tt)* }) => ({
+    //     println!("{}", concat!($(stringify!($body)," - "),*));
+    //     ochre_component!($($body)*);
+    // });
     (Window<$data:ty> { $($body:tt)* }) => ({
+        use $crate::Component;
         println!("{}", concat!($(stringify!($body)," - "),*));
-        ochre_component!($($body)*);
+        let mut current = Box::new($crate::Window::new());
+        ochre_component!(current, $($body)*);
+        current
     });
 }
 
@@ -37,19 +88,17 @@ macro_rules! ochre {
 macro_rules! ochre_app {
     ($root:ident) => {
         struct $root {
-            window: $crate::Window,
-            children: Vec<$crate::Component>,
+            window: Box<$crate::Window>,
         }
         impl $root {
             pub fn new() -> $root {
+                // TODO: Can we make $root lower case as a &'static str?
+                let mut window = include!(concat!(stringify!($root), ".ore"));
                 $root {
-                    window: $crate::Window::new(),
-                    children: Vec::new(),
+                    window: window,
                 }
             }
             pub fn run(&mut self) {
-                // TODO: Can we make $root lower case as a &'static str?
-                include!(concat!(stringify!($root), ".ore"));
                 $crate::run(&mut self.window);
             }
         }
@@ -58,18 +107,21 @@ macro_rules! ochre_app {
 
 #[macro_export]
 macro_rules! ochre_component {
-    () => {
-        println!("Empty");
+    ($ctx:ident,) => {
+        println!("Empty with ctx");
     };
-    ($k:ident: $v:expr, $($rest:tt)*) => {
+    ($ctx:ident, $k:ident: $v:expr, $($rest:tt)*) => {
         println!("Rule: {}: {}", stringify!($k), stringify!($v));
+        $ctx.add_rule(stringify!($k), Box::new(|| { $v; }));
         println!("{}", concat!($(stringify!($rest)," - "),*));
-        ochre_component!($($rest)*);
+        ochre_component!($ctx, $($rest)*);
     };
-    ($c:ident { $($body:tt)* } $($rest:tt)*) => {
+    ($ctx:ident, $c:ident { $($body:tt)* } $($rest:tt)*) => {
+        let mut current = Box::new($crate::$c::new());
         println!("{}", concat!($(stringify!($body)," * "),*));
-        ochre_component!($($body)*);
-        ochre_component!($($rest)*);
+        ochre_component!(current, $($body)*);
+        $ctx.add_child(current);
+        ochre_component!($ctx, $($rest)*);
     };
     // TODO: A nice solution for nested data
     // ($c:ident<$t:ty> { $($body:tt)* } $($rest:tt)*) => {
@@ -167,6 +219,7 @@ impl ConrodBase {
 }
 
 pub struct Window {
+    context: Context,
     window: PistonWindow,
 }
 
@@ -179,7 +232,7 @@ impl Window {
             .unwrap();
         window.set_ups(60); // TODO: Is there a builder method for this?
 
-        Window { window: window }
+        Window { window: window, context: Context::new() }
     }
 }
 

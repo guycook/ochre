@@ -5,7 +5,7 @@ ochre! {
 
         Button {
             label: "Increment",
-            on_click: || { data.count += 1 },
+            //on_click: || { data.count += 1 },
         }
     }
 }
