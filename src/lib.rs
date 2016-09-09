@@ -16,7 +16,7 @@ pub trait New {
 }
 
 pub struct Context {
-    rules: HashMap<&'static str, Box<Fn() -> ()>>,
+    rules: HashMap<&'static str, Box<Fn() -> Box<std::any::Any>>>,
     children: Vec<Box<Component>>,
 }
 
@@ -32,22 +32,33 @@ impl Context {
 pub trait Component {
     fn context(&mut self) -> &mut Context;
 
-    fn add_rule(&mut self, key: &'static str, value: Box<Fn() -> ()>) {
+    fn add_rule(&mut self, key: &'static str, value: Box<Fn() -> Box<std::any::Any>>) {
         self.context().rules.insert(key, value);
     }
 
     fn add_child(&mut self, child: Box<Component>) {
         self.context().children.push(child);
     }
+
+    fn render(&mut self, ui: &mut conrod::UiCell);
+
+    fn update(&mut self, ui: &mut conrod::UiCell) {
+        self.render(ui);
+        for child in self.context().children.iter_mut() {
+            child.update(ui);
+        }
+    }
 }
 
 pub struct Button {
+    id: Option<conrod::widget::Id>,
     context: Context,
 }
 
 impl Button {
     pub fn new() -> Button {
         Button {
+            id: None,
             context: Context::new(),
         }
     }
@@ -57,12 +68,53 @@ impl Component for Button {
     fn context(&mut self) -> &mut Context {
         &mut self.context
     }
+
+    fn render(&mut self, ui: &mut conrod::UiCell) {
+        // Lazy creation of conrod unique id
+        // TODO: Probably handle ids on Component/Context, especially since children will need access to parent's id
+        let id = match self.id {
+            Some(id) => id,
+            None => {
+                let id = ui.widget_id_generator().next();
+                self.id = Some(id);
+                id
+            },
+        };
+        let mut builder = widget::Button::new();
+
+        // Some random defaults for now
+        // TODO: Some reasonable way to set up defaults
+        builder = builder
+            .x(0.0)
+            .y(0.0)
+            .w_h(80.0, 80.0)
+            .label("TODO");
+
+        // Turn rules into properties
+        // TODO: Somehow memoize fn calls: memoirs lib?
+        let rules = &self.context().rules;
+        match rules.get("x") {
+            Some(f) => builder = builder.x(match f().downcast::<f64>() {
+                Ok(x) => *x,
+                // TODO: Compile time type checking...
+                Err(_) => panic!("Couldn't cast x result to f64"),
+            }),
+            None => (),
+        }
+
+        builder.set(id, ui);
+            // .was_clicked() {
+            //     *count += 1
+            // }
+    }
 }
 
 impl Component for Window {
     fn context(&mut self) -> &mut Context {
         &mut self.context
     }
+
+    fn render(&mut self, ui: &mut conrod::UiCell) { }
 }
 
 #[macro_export]
@@ -112,7 +164,7 @@ macro_rules! ochre_component {
     };
     ($ctx:ident, $k:ident: $v:expr, $($rest:tt)*) => {
         println!("Rule: {}: {}", stringify!($k), stringify!($v));
-        $ctx.add_rule(stringify!($k), Box::new(|| { $v; }));
+        $ctx.add_rule(stringify!($k), Box::new(|| { Box::new($v) }));
         println!("{}", concat!($(stringify!($rest)," - "),*));
         ochre_component!($ctx, $($rest)*);
     };
@@ -131,28 +183,10 @@ macro_rules! ochre_component {
     // };
 }
 
-// pub fn app() -> App {
-//     let root = o_component!(include!("counter.ore"));
-//     App { root: root }
-// }
-
 /// TODO: 2nd param is where eg CounterData goes
-fn update_ui(ui: &mut conrod::UiCell, count: &mut i32) {
-    // Generate the ID for the Button COUNTER.
-    widget_ids!(CANVAS, COUNTER);
-
+fn update_ui(ui: &mut conrod::UiCell, count: &mut i32, id: conrod::widget::Id) {
     // Create a background canvas upon which we'll place the button.
-    widget::Canvas::new().pad(40.0).set(CANVAS, ui);
-
-    // Draw the button and increment `count` if pressed.
-    if widget::Button::new()
-        .middle_of(CANVAS)
-        .w_h(80.0, 80.0)
-        .label(&count.to_string())
-        .set(COUNTER, ui)
-        .was_clicked() {
-            *count += 1
-        }
+    widget::Canvas::new().set(id, ui);
 }
 
 struct ConrodBase {
@@ -200,7 +234,13 @@ impl ConrodBase {
             event.update(|_| {
                 let mut ui = self.ui.set_widgets();
 
-                update_ui(&mut ui, &mut count);
+                // TODO: Remove
+                widget_ids!(struct Ids { canvas });
+                let ids = Ids::new(ui.widget_id_generator());
+
+                update_ui(&mut ui, &mut count, ids.canvas);
+
+                window.update(&mut ui);
             });
 
             // Draw the `Ui` if it has changed.
