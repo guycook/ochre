@@ -71,14 +71,15 @@ impl Component for Button {
 
     fn render(&mut self, ui: &mut conrod::UiCell) {
         // Lazy creation of conrod unique id
-        // TODO: Probably handle ids on Component/Context, especially since children will need access to parent's id
+        // TODO: Probably handle ids on Component/Context, especially since
+        //       children will need access to parent's id
         let id = match self.id {
             Some(id) => id,
             None => {
                 let id = ui.widget_id_generator().next();
                 self.id = Some(id);
                 id
-            },
+            }
         };
         let mut builder = widget::Button::new();
 
@@ -94,11 +95,13 @@ impl Component for Button {
         // TODO: Somehow memoize fn calls: memoirs lib?
         let rules = &self.context().rules;
         match rules.get("x") {
-            Some(f) => builder = builder.x(match f().downcast::<f64>() {
-                Ok(x) => *x,
-                // TODO: Compile time type checking...
-                Err(_) => panic!("Couldn't cast x result to f64"),
-            }),
+            Some(f) => {
+                builder = builder.x(match f().downcast::<f64>() {
+                    Ok(x) => *x,
+                    // TODO: Compile time type checking...
+                    Err(_) => panic!("Couldn't cast x result to f64"),
+                })
+            }
             None => (),
         }
 
@@ -114,7 +117,7 @@ impl Component for Window {
         &mut self.context
     }
 
-    fn render(&mut self, ui: &mut conrod::UiCell) { }
+    fn render(&mut self, ui: &mut conrod::UiCell) {}
 }
 
 #[macro_export]
@@ -272,7 +275,10 @@ impl Window {
             .unwrap();
         window.set_ups(60); // TODO: Is there a builder method for this?
 
-        Window { window: window, context: Context::new() }
+        Window {
+            window: window,
+            context: Context::new(),
+        }
     }
 }
 
